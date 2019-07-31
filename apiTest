@@ -132,7 +132,7 @@ def runtest(testdata, number):
 
 
 def report():
-    datadir = 'F:/testData/dyna.xlsx'
+    datadir = 'F:/testData/apiData.xlsx'
     excelrows = openpyxl.load_workbook(datadir)
 
     counts = 1
@@ -160,7 +160,7 @@ def report():
 
 def main():
     # 测试数据文件路径
-    datadir = 'F:/testData/dyna.xlsx'
+    datadir = 'F:/testData/apiData.xlsx'
     # 打开Excel文件
     excelrows = openpyxl.load_workbook(datadir)
 
