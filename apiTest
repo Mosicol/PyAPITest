@@ -1,0 +1,187 @@
+import requests
+import openpyxl
+import json
+import hashlib
+from openpyxl.styles import colors, PatternFill
+from pyecharts import Pie
+import sys
+
+
+'''
+    实现了如下功能
+    1、读取测试文件(*.xlsx)
+    2、发起请求测试接口(目前:GET/POST)
+    3、打印response信息
+    4、添加检查点
+    5、生成测试结果报告（Excel + HTML）
+'''
+
+
+# MD5加密
+def md5dec(param, salt):
+    dstr = ''
+    for key in sorted(param):
+        tstr = key + '=' + param[key] + '&'
+        dstr = dstr + tstr
+    dstr = dstr + 'salt=' + salt
+
+    # 加密过程
+    m = hashlib.md5()
+    m.update(dstr.encode('utf-8'))
+    md5_str = m.hexdigest()
+    return md5_str.upper()
+
+
+'''
+    执行测试
+    1、读取Excel数据文件
+    2、发起请求
+    3、返回数据与检查点对比判断接口是否正常
+'''
+
+
+def runtest(testdata, number):
+    # 打开Excel文件
+    tdata = openpyxl.load_workbook(testdata)
+
+    # 读取URL
+    url = tdata['API_DATA'].cell(row=number, column=3).value
+
+    # 读取请求头
+    theader = tdata['API_DATA'].cell(row=number, column=5).value
+    header = json.loads(theader)
+
+    # 读取全部请求参数
+    all_param = tdata['API_DATA'].cell(row=number, column=6).value
+    param = json.loads(all_param)
+
+    # 读取请求方法
+    method = tdata['API_DATA'].cell(row=number, column=4).value.strip().upper()
+
+    # 读取是否加密
+    isdecript = tdata['API_DATA'].cell(row=number, column=10).value.upper().strip()
+
+    if isdecript.upper() == 'Y':
+        # 获取要加密的参数项
+        dtparam = tdata['API_DATA'].cell(row=number, column=7).value
+        dparam = json.loads(dtparam)
+
+        # 读取加签的盐值salt
+        salt = tdata['API_DATA'].cell(row=number, column=9).value.strip()
+
+        # 获取要替换的参数项
+        replace_value = tdata['API_DATA'].cell(row=number, column=8).value.strip()
+
+        # MD5加密
+        sign = md5dec(dparam, salt)
+        # 用加密后的值替换参数项
+        param[replace_value] = sign
+
+    # 实现GET和POST请求
+    if method == 'GET':
+        response = requests.get(url, params=param, headers=header)
+        # 将response信息写入Excel
+        tdata['API_DATA'].cell(row=number, column=13).value = str(response.text)
+        # 读取check_point信息
+        check_point = tdata['API_DATA'].cell(row=number, column=11).value.strip()
+        if check_point in response.text:
+            No = str(tdata['API_DATA'].cell(row=number, column=1).value).strip()
+            api_aim = tdata['API_DATA'].cell(row=number, column=2).value.strip()
+            print("No."+No+" "+api_aim+" SUCCESS")
+            tdata['API_DATA'].cell(row=number, column=12).value = 'SUCCESS'
+            tdata['API_DATA'].cell(row=number, column=12).fill = PatternFill(start_color=colors.GREEN,
+                                                                             end_color=colors.GREEN,
+                                                                             fill_type='solid')
+            tdata.save(testdata)
+
+        else:
+            No = str(tdata['API_DATA'].cell(row=number, column=1).value).strip()
+            api_aim = tdata['API_DATA'].cell(row=number, column=2).value.strip()
+            print("No." + No + " " + api_aim + " FAILD  " + str(response.status_code))
+            tdata['API_DATA'].cell(row=number, column=12).value = 'FAILD'
+            tdata['API_DATA'].cell(row=number, column=12).fill = PatternFill(start_color=colors.RED,
+                                                                             end_color=colors.RED,
+                                                                             fill_type='solid')
+            tdata.save(testdata)
+
+    elif method == 'POST':
+        response = requests.post(url, params=param, headers=header)
+        # 将response信息写入Excel
+        tdata['API_DATA'].cell(row=number, column=13).value = str(response.text)
+        # 读取check_point信息
+        check_point = tdata['API_DATA'].cell(row=number, column=11).value.strip()
+        if check_point in response.text:
+            No = str(tdata['API_DATA'].cell(row=number, column=1).value).strip()
+            api_aim = tdata['API_DATA'].cell(row=number, column=2).value.strip()
+            print("No." + No + " " + api_aim + " SUCCESS")
+            tdata['API_DATA'].cell(row=number, column=12).value = 'SUCCESS'
+
+            tdata.save(testdata)
+        else:
+            No = str(tdata['API_DATA'].cell(row=number, column=1).value).strip()
+            api_aim = tdata['API_DATA'].cell(row=number, column=2).value.strip()
+            print("No." + No + " " + api_aim + " FAILD  " + str(response.status_code))
+            tdata['API_DATA'].cell(row=number, column=12).value = 'FAILD'
+            tdata['API_DATA'].cell(row=number, column=12).fill = PatternFill(start_color=colors.RED,
+                                                                             end_color=colors.RED,
+                                                                             fill_type='solid')
+            tdata.save(testdata)
+
+    # 关闭文件
+    tdata.close()
+
+
+def report():
+    datadir = 'F:/testData/dyna.xlsx'
+    excelrows = openpyxl.load_workbook(datadir)
+
+    counts = 1
+    su = 0
+    fa = 0
+    while 1:
+        counts += 1
+        mytext = excelrows['API_DATA'].cell(row=counts, column=12).value
+        if mytext == 'SUCCESS':
+            su += 1
+
+        elif mytext == 'FAILD':
+            fa += 1
+        else:
+            excelrows.close()
+            break
+        attr = ["失败", "", "成功"]
+        v1 = [fa, "", su]
+        pie = Pie("接口运行结果分析")
+        pie.add("", attr, v1, is_label_show=True)
+        pie.render("result.html")
+        for line in sys.stdin:
+            print('[!!!] ' + line)
+
+
+def main():
+    # 测试数据文件路径
+    datadir = 'F:/testData/dyna.xlsx'
+    # 打开Excel文件
+    excelrows = openpyxl.load_workbook(datadir)
+
+    # 统计行数
+    erows = excelrows['API_DATA']
+    counts = 1
+    while 1:
+        cell = erows.cell(row=counts, column=3).value
+        if cell:
+            counts += 1
+        else:
+            print("运行接口数目:"+str(counts-2))
+            excelrows.close()
+            break
+    # 执行Excel表格所有用例
+    for i in range(2, counts):
+        runtest(datadir, i)
+
+    # 生成测试报告
+    report()
+
+
+if __name__ == '__main__':
+    main()
